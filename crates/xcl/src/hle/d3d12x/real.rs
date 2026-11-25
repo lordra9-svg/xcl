@@ -3134,7 +3134,7 @@ creator!(dev_create_command_list1, "CreateCommandList1", Kind::CommandList, [a1,
 /// Put an adopted object's original vtable pointer back for a call into the PC runtime. D3D12
 /// on Windows accepts the extended table, but vkd3d-proton (Wine/Proton) checks an argument's
 /// vtable against its own and refuses the call (CreateCommandList → E_INVALIDARG).
-unsafe fn unadopt(obj: usize) -> Option<(*mut usize, usize)> {
+pub(super) unsafe fn unadopt(obj: usize) -> Option<(*mut usize, usize)> {
     if obj == 0 {
         return None;
     }
@@ -3148,9 +3148,24 @@ unsafe fn unadopt(obj: usize) -> Option<(*mut usize, usize)> {
     Some((obj as *mut usize, ext))
 }
 
-unsafe fn restore_adopted(saved: Option<(*mut usize, usize)>) {
+pub(super) unsafe fn restore_adopted(saved: Option<(*mut usize, usize)>) {
     if let Some((slot, ext)) = saved {
         *slot = ext;
+    }
+}
+
+/// Keeps an object on its original vtable for as long as it lives (see [`unadopt`]).
+pub(super) struct AdoptedGuard(Option<(*mut usize, usize)>);
+
+impl AdoptedGuard {
+    pub(super) unsafe fn new(obj: usize) -> Self {
+        Self(unadopt(obj))
+    }
+}
+
+impl Drop for AdoptedGuard {
+    fn drop(&mut self) {
+        unsafe { restore_adopted(self.0.take()) }
     }
 }
 
@@ -6752,14 +6767,21 @@ pub(super) unsafe fn bind_pipeline(this: *mut c_void, pso: *mut c_void) {
 unsafe extern "system" fn cl_set_pipeline_state(this: *mut c_void, pso: *mut c_void) {
     type F = unsafe extern "system" fn(*mut c_void, *mut c_void);
     let f: F = std::mem::transmute(orig_fn(this, slot_of(this, "SetPipelineState")));
-    f(this, super::pso_async::resolve_for_bind(pso as usize) as *mut c_void);
+    // vkd3d-proton checks the pipeline state's vtable (Wine/Proton): pass the PC object
+    let bound = super::pso_async::resolve_for_bind(pso as usize) as *mut c_void;
+    let saved = unadopt(bound as usize);
+    f(this, bound);
+    restore_adopted(saved);
     super::list_x::on_set_pipeline_state(this, pso as usize);
 }
 
 unsafe extern "system" fn cl_clear_state(this: *mut c_void, pso: *mut c_void) {
     type F = unsafe extern "system" fn(*mut c_void, *mut c_void);
     let f: F = std::mem::transmute(orig_fn(this, slot_of(this, "ClearState")));
-    f(this, super::pso_async::resolve_for_bind(pso as usize) as *mut c_void);
+    let bound = super::pso_async::resolve_for_bind(pso as usize) as *mut c_void;
+    let saved = unadopt(bound as usize);
+    f(this, bound);
+    restore_adopted(saved);
     super::list_x::on_clear_state(this, pso as usize);
     super::bind::clear_state(this, pso as usize);
 }
@@ -7062,7 +7084,12 @@ unsafe extern "system" fn q_execute_command_lists(this: *mut c_void, n: u32, lis
     super::list_x::note_queue_for_lists(this as usize, &mapped);
     super::list_x::execute_with_waits_on(this, &mapped, |chunk| {
         let _ = super::alloc_pool::note_resubmits(this, chunk);
+        // vkd3d-proton checks each list's vtable (Wine/Proton): hand it the PC objects
+        let saved: Vec<_> = chunk.iter().map(|&l| unadopt(l as usize)).collect();
         f(this, chunk.len() as u32, chunk.as_ptr());
+        for s in saved {
+            restore_adopted(s);
+        }
         super::list_x::copy_scratch_submitted(this, chunk);
         super::alloc_pool::executed(this, chunk);
         super::list_x::signal_write64_fences(this, chunk);

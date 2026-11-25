@@ -720,7 +720,11 @@ unsafe fn ensure_swapchain(p: &mut Presenter, hwnd: HWND, w: u32, h: u32, fmt: D
         AlphaMode: DXGI_ALPHA_MODE_IGNORE,
         ..Default::default()
     };
-    match factory.CreateSwapChainForHwnd(queue, hwnd, &desc, None, None) {
+    // vkd3d-proton checks the queue's vtable when DXGI keeps it (Wine/Proton): pass the PC object
+    let saved = super::real::unadopt(qraw as usize);
+    let made = factory.CreateSwapChainForHwnd(queue, hwnd, &desc, None, None);
+    super::real::restore_adopted(saved);
+    match made {
         Ok(sc1) => {
             let _ = factory.MakeWindowAssociation(hwnd, DXGI_MWA_NO_ALT_ENTER);
             p.sc = sc1.cast::<IDXGISwapChain3>().ok();
@@ -845,6 +849,11 @@ unsafe fn present_now(min_interval: Duration, frame: Option<(usize, usize)>) {
     let qraw = queue as *mut c_void;
     let Some(q) = ID3D12CommandQueue::from_raw_borrowed(&qraw) else { return };
     let Ok(cl) = p.list.cast::<ID3D12CommandList>() else { return };
+    // vkd3d-proton checks the objects' vtables, and DXGI keeps the queue for Present
+    // (Wine/Proton): keep them on the PC tables until this present is done.
+    let _q = super::real::AdoptedGuard::new(queue as usize);
+    let _l = super::real::AdoptedGuard::new(cl.as_raw() as usize);
+    let _f = super::real::AdoptedGuard::new(p.fence.as_raw() as usize);
     q.ExecuteCommandLists(&[Some(cl)]);
     p.copy_source = Some(src);
     p.dumps = dumps;

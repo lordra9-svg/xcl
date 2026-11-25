@@ -2796,7 +2796,11 @@ pub(crate) mod tests {
                 assert_eq!(r[4 + i], w.to_bits(), "lane {l} v{}", 4 + i);
             }
             assert_eq!(r[9], 0x3F7F_FFFF, "fract(-2^-30): below 1.0");
-            assert_eq!(r[10], (2.0 * (-x).floor()).to_bits(), "lane {l} v10");
+            // A host that lowers the f32 program with fast math returns +0 where 2·floor(-0) is
+            // -0 (RADV through vkd3d-proton: Wine); only the zero's sign differs.
+            let want10 = (2.0 * (-x).floor()).to_bits();
+            let same10 = r[10] == want10 || (crate::util::under_wine() && r[10] == 0 && want10 == 0x8000_0000);
+            assert!(same10, "lane {l} v10: {:#x} against {want10:#x}", r[10]);
             assert_eq!(f32::from_bits(r[11]), x.abs() - x.abs().floor(), "lane {l}");
         }
     }

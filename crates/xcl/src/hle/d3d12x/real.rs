@@ -1581,6 +1581,8 @@ unsafe extern "system" fn res_map(this: *mut c_void, sub: u32, range: *const c_v
     // an invalid call (debug layer 824 / 822) that the runtime answers with E_INVALIDARG
     let hr = if pc_can_map(this) {
         let f: unsafe extern "system" fn(*mut c_void, u32, *const c_void, *mut *mut c_void) -> HRESULT = std::mem::transmute(orig_fn(this, slot_of(this, "Map")));
+        // vkd3d-proton checks the resource's vtable (Wine/Proton)
+        let _guard = AdoptedGuard::new(this as usize);
         f(this, sub, range, data)
     } else {
         E_INVALIDARG
@@ -1649,6 +1651,7 @@ unsafe extern "system" fn res_unmap(this: *mut c_void, sub: u32, range: *const c
         return;
     }
     let f: unsafe extern "system" fn(*mut c_void, u32, *const c_void) = std::mem::transmute(orig_fn(this, slot_of(this, "Unmap")));
+    let _guard = AdoptedGuard::new(this as usize);
     f(this, sub, range)
 }
 
@@ -2881,6 +2884,8 @@ fn overrides(kind: Kind) -> Vec<(&'static str, usize)> {
             ("SetPipelineState", cl_set_pipeline_state as usize),
             ("OMSetRenderTargets", cl_om_set_render_targets as usize),
             ("ClearRenderTargetView", cl_clear_rtv as usize),
+            ("UpdateTileMappings", cl_update_tile_mappings as usize),
+            ("CopyTileMappings", cl_copy_tile_mappings as usize),
             ("ExecuteIndirect", cl_execute_indirect as usize),
         ]),
         Kind::DmaList => v.extend_from_slice(&[
@@ -2969,6 +2974,8 @@ unsafe extern "system" fn cl_reset(this: *mut c_void, allocator: *mut c_void, in
     let f: unsafe extern "system" fn(*mut c_void, *mut c_void, *mut c_void) -> HRESULT =
         std::mem::transmute(orig_fn(this, slot_of(this, "Reset")));
     let resolved = super::pso_async::resolve_for_bind(initial_state as usize) as *mut c_void;
+    // vkd3d-proton checks the allocator's and pipeline state's vtables (Wine/Proton)
+    let (_a, _p) = (AdoptedGuard::new(allocator as usize), AdoptedGuard::new(resolved as usize));
     let hr = f(this, allocator, resolved);
     preserve_vtable(this, ext);
     if hr >= 0 {
@@ -6798,6 +6805,43 @@ unsafe extern "system" fn cl_draw_indexed_instanced(this: *mut c_void, icount: u
     type F = unsafe extern "system" fn(*mut c_void, u32, u32, u32, i32, u32);
     let f: F = std::mem::transmute(orig_fn(this, slot_of(this, "DrawIndexedInstanced")));
     f(this, icount, inst, si, bv, sinst);
+}
+
+#[allow(clippy::too_many_arguments)]
+unsafe extern "system" fn cl_update_tile_mappings(
+    this: *mut c_void,
+    res: *mut c_void,
+    nregions: u32,
+    regions: *const c_void,
+    sizes: *const c_void,
+    heap: *mut c_void,
+    nranges: u32,
+    range_flags: *const u32,
+    starts: *const u32,
+    lens: *const u32,
+    flags: u32,
+) {
+    type F = unsafe extern "system" fn(*mut c_void, *mut c_void, u32, *const c_void, *const c_void, *mut c_void, u32, *const u32, *const u32, *const u32, u32);
+    let f: F = std::mem::transmute(orig_fn(this, slot_of(this, "UpdateTileMappings")));
+    // vkd3d-proton checks the tile resource's and heap's vtables (Wine/Proton)
+    let (_r, _h) = (AdoptedGuard::new(res as usize), AdoptedGuard::new(heap as usize));
+    f(this, res, nregions, regions, sizes, heap, nranges, range_flags, starts, lens, flags)
+}
+
+#[allow(clippy::too_many_arguments)]
+unsafe extern "system" fn cl_copy_tile_mappings(
+    this: *mut c_void,
+    dst: *mut c_void,
+    dst_coord: *const c_void,
+    src: *mut c_void,
+    src_coord: *const c_void,
+    size: *const c_void,
+    flags: u32,
+) {
+    type F = unsafe extern "system" fn(*mut c_void, *mut c_void, *const c_void, *mut c_void, *const c_void, *const c_void, u32);
+    let f: F = std::mem::transmute(orig_fn(this, slot_of(this, "CopyTileMappings")));
+    let (_d, _s) = (AdoptedGuard::new(dst as usize), AdoptedGuard::new(src as usize));
+    f(this, dst, dst_coord, src, src_coord, size, flags)
 }
 
 #[allow(clippy::too_many_arguments)]

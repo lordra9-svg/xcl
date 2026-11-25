@@ -3128,8 +3128,40 @@ macro_rules! creator {
 creator!(dev_create_command_queue, "CreateCommandQueue", Kind::CommandQueue, [a1]);
 creator!(dev_create_command_queue1, "CreateCommandQueue1", Kind::CommandQueue, [a1, a2]);
 creator!(dev_create_command_allocator, "CreateCommandAllocator", Kind::CommandAllocator, [a1]);
-creator!(dev_create_command_list, "CreateCommandList", Kind::CommandList, [a1, a2, a3, a4]);
+creator!(dev_create_command_list_raw, "CreateCommandList", Kind::CommandList, [a1, a2, a3, a4]);
 creator!(dev_create_command_list1, "CreateCommandList1", Kind::CommandList, [a1, a2, a3]);
+
+/// Put an adopted object's original vtable pointer back for a call into the PC runtime. D3D12
+/// on Windows accepts the extended table, but vkd3d-proton (Wine/Proton) checks an argument's
+/// vtable against its own and refuses the call (CreateCommandList → E_INVALIDARG).
+unsafe fn unadopt(obj: usize) -> Option<(*mut usize, usize)> {
+    if obj == 0 {
+        return None;
+    }
+    let obj = obj as *mut c_void;
+    let ext = vt(obj) as usize;
+    if !is_ext(ext) {
+        return None;
+    }
+    let orig = *((ext as *const usize).sub(1));
+    *(obj as *mut usize) = orig;
+    Some((obj as *mut usize, ext))
+}
+
+unsafe fn restore_adopted(saved: Option<(*mut usize, usize)>) {
+    if let Some((slot, ext)) = saved {
+        *slot = ext;
+    }
+}
+
+pub(super) unsafe extern "system" fn dev_create_command_list(this: *mut c_void, node: usize, ty: usize, alloc: usize, pso: usize, riid: *const GUID, ppv: *mut *mut c_void) -> HRESULT {
+    // the PC method may reject an object whose vtable it does not recognize (vkd3d-proton)
+    let (a, p) = (unadopt(alloc), unadopt(pso));
+    let hr = dev_create_command_list_raw(this, node, ty, alloc, pso, riid, ppv);
+    restore_adopted(p);
+    restore_adopted(a);
+    hr
+}
 
 /// Create a raw adopted PC `ID3D12GraphicsCommandList` without wrapping it in `title_list`
 /// (used for deferred mid-list split segments on the same allocator).

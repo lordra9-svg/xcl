@@ -971,6 +971,20 @@ pub(super) unsafe fn remap_if_unmapped(res: &ID3D12Resource) -> bool {
     true
 }
 
+/// The pool tiles a placed resource currently maps (`own` page addresses and `extra` keys, in
+/// tile order) – tests compare them to see that a second placement at an address reuses them.
+#[cfg(test)]
+pub(super) fn target_tiles(resource: usize) -> Option<(Vec<Tile>, Vec<Tile>)> {
+    let g = PAGES.lock().unwrap();
+    for pages in g.values().flatten() {
+        let Some(t) = pages.targets.get(&resource) else { continue };
+        let own: Vec<Tile> = t.used.iter().filter_map(|a| pages.pages.get(a).map(|p| p.tile)).collect();
+        let extra: Vec<Tile> = t.used_extra.iter().filter_map(|k| pages.extra_pages.get(k).map(|p| p.tile)).collect();
+        return Some((own, extra));
+    }
+    None
+}
+
 /// A resource released: its pages are no longer its.
 fn forget_pages(resource: usize) {
     let mut g = PAGES.lock().unwrap();

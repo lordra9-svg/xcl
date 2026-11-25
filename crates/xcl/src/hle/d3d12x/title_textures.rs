@@ -2198,9 +2198,17 @@ mod tests {
                 }
                 // Placing a second cubemap at the same va must reuse every tile including extra_pages.
                 if label.contains("cubemap") {
-                    let p0 = dev_pages();
+                    // Compare the tiles themselves: a global page count also changes when bind's
+                    // idle sweep returns unrelated pages, which is a matter of how long the
+                    // readbacks above took, not of this placement.
+                    let tiles = super::super::vram::target_tiles(res.as_raw() as usize)
+                        .expect("placed cubemap has tiles");
                     let res2 = place_tex(base, &d);
-                    assert_eq!(dev_pages(), p0, "cubemap extra_pages must be reused at same va");
+                    assert_eq!(
+                        super::super::vram::target_tiles(res2.as_raw() as usize).expect("second placed cubemap has tiles"),
+                        tiles,
+                        "cubemap extra_pages must be reused at same va"
+                    );
                     drop(res2);
                 }
                 drop(res);

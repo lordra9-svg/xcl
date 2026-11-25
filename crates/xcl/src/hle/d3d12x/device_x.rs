@@ -1301,7 +1301,10 @@ mod tests {
                 let mut r: Option<ID3D12Resource> = None;
                 dev.CreatePlacedResource(&heap, 0, &d, D3D12_RESOURCE_STATES(state as i32), None, &mut r).map(|_| r)
             };
-            assert!(place(0x8 & real::PC_RESOURCE_STATES).is_err(), "UNORDERED_ACCESS without the UAV flag");
+            // vkd3d-proton does not reject the invalid state the PC D3D12 does (Wine/Proton)
+            if !crate::util::under_wine() {
+                assert!(place(0x8 & real::PC_RESOURCE_STATES).is_err(), "UNORDERED_ACCESS without the UAV flag");
+            }
             let state = pc_initial_state(6, 0x8);
             assert_eq!(state, D3D12_RESOURCE_STATE_DEPTH_WRITE.0 as u32);
             let r = place(state).unwrap_or_else(|e| panic!("placed in {state:#x}: {e}"));

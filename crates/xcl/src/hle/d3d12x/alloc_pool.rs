@@ -102,6 +102,8 @@ pub(super) fn forget_list(list: usize) {
 /// only after native Reset succeeds. No pool lock is held across the driver call.
 pub fn reset_list(list: usize, alloc: usize, ty: i32, reset: impl FnOnce(usize) -> HRESULT) -> HRESULT {
     let backing = current(alloc);
+    // vkd3d-proton checks the allocator's vtable (Wine/Proton)
+    let _pc_backing = unsafe { super::real::AdoptedGuard::new(backing) };
     let hr = reset(backing);
     if hr < 0 || !enabled() || alloc == 0 {
         return hr;
@@ -441,7 +443,12 @@ mod tests {
             if !super::super::real::is_adopted(a) {
                 super::super::real::adopt(a, super::super::real::Kind::CommandAllocator);
             }
-            let list: ID3D12GraphicsCommandList = dev.CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, &alloc, None).unwrap();
+            // vkd3d-proton checks the allocator's vtable: the test adopted it above, so put the
+            // PC table back for this direct PC call (the HLE CreateCommandList does the same).
+            let list: ID3D12GraphicsCommandList = {
+                let _pc_alloc = super::super::real::AdoptedGuard::new(a as usize);
+                dev.CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, &alloc, None).unwrap()
+            };
             let l = list.as_raw();
             created_on(l as usize, a as usize, D3D12_COMMAND_LIST_TYPE_DIRECT.0);
             list.Close().unwrap();

@@ -3142,7 +3142,8 @@ creator!(dev_create_command_list1, "CreateCommandList1", Kind::CommandList, [a1,
 /// on Windows accepts the extended table, but vkd3d-proton (Wine/Proton) checks an argument's
 /// vtable against its own and refuses the call (CreateCommandList → E_INVALIDARG).
 pub(super) unsafe fn unadopt(obj: usize) -> Option<(*mut usize, usize)> {
-    if obj == 0 {
+    // test-only fake handles (small integers) are not objects
+    if obj < 0x10000 || !crate::gpu::shader::readable(obj, std::mem::size_of::<usize>()) {
         return None;
     }
     let obj = obj as *mut c_void;

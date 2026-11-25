@@ -188,15 +188,30 @@ thread_local! {
 
 static FAILURES: AtomicU32 = AtomicU32::new(0);
 
+fn record_check(line: &str) {
+    // Under `proton run` the title's stdout is lost; XCL_TEST_LOG names a file to append to.
+    if let Some(path) = std::env::var_os("XCL_TEST_LOG") {
+        use std::io::Write as _;
+        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+            let _ = writeln!(f, "{line}");
+        }
+    }
+}
+
 fn check(name: &str, f: impl FnOnce() -> Result<(), String>) {
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
-        Ok(Ok(())) => println!("[PASS] {name}"),
+        Ok(Ok(())) => {
+            println!("[PASS] {name}");
+            record_check(&format!("[PASS] {name}"));
+        }
         Ok(Err(e)) => {
             println!("[FAIL] {name}: {e}");
+            record_check(&format!("[FAIL] {name}: {e}"));
             FAILURES.fetch_add(1, Ordering::SeqCst);
         }
         Err(_) => {
             println!("[FAIL] {name}: panic");
+            record_check(&format!("[FAIL] {name}: panic"));
             FAILURES.fetch_add(1, Ordering::SeqCst);
         }
     }

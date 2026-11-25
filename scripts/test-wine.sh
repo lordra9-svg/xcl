@@ -13,6 +13,12 @@
 # The test executable is the unittests src/lib.rs binary `cargo test --no-run` prints.
 # Set DISPLAY yourself (or prefix the command with xvfb-run) and the d3d12 overrides:
 #   WINEDLLOVERRIDES='d3d12=n,b;d3d12core=n,b'
+#
+# The vkd3d-proton behind d3d12.dll must ship a current dxil-spirv: v3.1's
+# translator hands `dx.op.udiv` (a two-output op) to its helper as a struct type,
+# which is invalid SPIR-V (the driver faults in vkCreateComputePipelines), and its
+# CFG structurizer crashes on some of XCL's generated control flow. vkd3d-proton
+# 3.2+ (or 3.1 rebuilt with the current dxil-spirv submodule) runs those tests.
 set -eu
 
 WINE=${WINE:-}

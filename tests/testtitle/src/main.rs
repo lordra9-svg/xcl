@@ -384,6 +384,8 @@ fn main() {
             let h = LoadLibraryW(wide(dll).as_ptr());
             if h == 0 { 0 } else { GetProcAddress(h, name.as_ptr()) }
         };
+        // Wine has no DWM cloaking (DwmGetWindowAttribute(DWMWA_CLOAKED) stays 0).
+        let wine = lookup("ntdll.dll", b"wine_get_version\0") != 0;
         let (fw, fa) = (lookup("ext-ms-win-rtcore-ntuser-window-l1-1-0.dll", b"CreateWindowExW "), lookup("ext-ms-win-rtcore-ntuser-window-ansi-l1-1-0.dll", b"CreateWindowExA "));
         ensure!(fw != 0 && fa != 0, "CreateWindowExW {fw:#x} / A {fa:#x} from the ntuser API sets");
         let (cw, ca): (CreateWindowExFn<u16>, CreateWindowExFn<u8>) = (std::mem::transmute(fw), std::mem::transmute(fa));
@@ -400,7 +402,9 @@ fn main() {
             ensure!(ex & 0x80 != 0 && ex & 0x4_0000 == 0, "{name}: not a tool window (no taskbar button) – exstyle {ex:#x}");
             ensure!(st & 0x8000_0000 != 0 && st & 0x00C0_0000 == 0, "{name}: not a frameless popup – style {st:#x}");
             ensure!(r[2] - r[0] == 1920 && r[3] - r[1] == 1080, "{name}: client area {}x{}", r[2] - r[0], r[3] - r[1]);
-            ensure!(cloaked != 0, "{name}: not cloaked");
+            if !wine {
+                ensure!(cloaked != 0, "{name}: not cloaked");
+            }
         }
         DestroyWindow(w);
         DestroyWindow(a);

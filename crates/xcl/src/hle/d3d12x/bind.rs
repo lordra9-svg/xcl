@@ -1166,7 +1166,11 @@ void main(uint t : SV_GroupIndex) {
             };
             let run = |list: &ID3D12GraphicsCommandList, close: &dyn Fn()| {
                 close();
+                // The queue is driven as a PC one here; an adopted list must go back on its PC
+                // vtable for the submission (vkd3d-proton checks it, Wine/Proton).
+                let saved = real::unadopt(list.as_raw() as usize);
                 queue.ExecuteCommandLists(&[Some(list.cast().unwrap())]);
+                real::restore_adopted(saved);
                 let v = done.GetCompletedValue() + 1;
                 queue.Signal(&done, v).unwrap();
                 fence::wait(&done, v, &dev, None, 10_000).unwrap();

@@ -6667,7 +6667,13 @@ mod tests {
                 let mut segs = Vec::new();
                 assert!(super::super::title_list::push_segments(w, &mut segs));
                 let again = super::super::alloc_pool::note_resubmits(q.as_raw(), &segs);
+                // vkd3d-proton validates each submitted list's vtable (Wine/Proton): the queue is
+                // driven as the PC one here, so the adopted segments go back on their PC tables.
+                let saved: Vec<_> = segs.iter().map(|&l| real::unadopt(l as usize)).collect();
                 exec(q.as_raw(), segs.len() as u32, segs.as_ptr());
+                for s in saved {
+                    real::restore_adopted(s);
+                }
                 super::super::alloc_pool::executed(q.as_raw(), &segs);
                 (segs, again)
             };

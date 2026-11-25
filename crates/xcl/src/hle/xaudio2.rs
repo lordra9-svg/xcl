@@ -509,8 +509,13 @@ pub fn silent_buffer(i: &XmaInfo, b: &XAudio2Buffer, silence: *const u8, max_byt
 /// or `DestroyVoice`.
 struct DecodedBuffer {
     orig_context: usize,
+    /// submission order, so GetState can name the current buffer when the host leaves it null
+    seq: u64,
     _pcm: Box<[u8]>,
 }
+
+/// Submission counter for `DecodedBuffer::seq`.
+static DECODE_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 enum VoiceDecoder {
     Opus(opus::Decoder),
@@ -1075,7 +1080,11 @@ unsafe fn submit_decoded_buffer(
 
     let pcm_ptr = pcm_bytes.as_ptr();
     let pcm_len = pcm_bytes.len() as u32;
-    let boxed = Box::new(DecodedBuffer { orig_context: orig_buf.context as usize, _pcm: pcm_bytes });
+    let boxed = Box::new(DecodedBuffer {
+        orig_context: orig_buf.context as usize,
+        seq: DECODE_SEQ.fetch_add(1, Ordering::Relaxed),
+        _pcm: pcm_bytes,
+    });
     let token = &*boxed as *const DecodedBuffer as usize;
     state.live_buffers.lock().unwrap().insert(token, boxed);
 
@@ -1147,8 +1156,15 @@ unsafe extern "system" fn get_state(this: *mut c_void, state_out: *mut XAudio2Vo
             .and_then(|m| m.get(&(this as usize)).map(|h| Arc::clone(&h.state)));
         if let Some(voice_state) = voice_state {
             let cur = (*state_out).current_buffer_context as usize;
+            let live = voice_state.live_buffers.lock().unwrap();
             if cur != 0 {
-                if let Some(buf) = voice_state.live_buffers.lock().unwrap().get(&cur) {
+                if let Some(buf) = live.get(&cur) {
+                    (*state_out).current_buffer_context = buf.orig_context as *mut c_void;
+                }
+            } else if (*state_out).buffers_queued > 0 {
+                // Wine's XAudio2 leaves the context null while buffers are playing; the oldest
+                // queued buffer is the current one (the title's own context for it).
+                if let Some(buf) = live.values().min_by_key(|b| b.seq) {
                     (*state_out).current_buffer_context = buf.orig_context as *mut c_void;
                 }
             }

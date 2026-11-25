@@ -94,8 +94,9 @@ unsafe fn describe_ptr(p: u64) -> String {
     // how far a string may be scanned without leaving readable memory
     let span = if crate::gpu::shader::readable(p as usize, 128) { 128 } else { 32 };
     if b[..8].chunks(2).all(|c| printable(c[0]) && c[1] == 0) {
-        let n = (0..span / 2).take_while(|&k| *(p as *const u16).add(k) != 0).count();
-        let s = String::from_utf16_lossy(std::slice::from_raw_parts(p as *const u16, n));
+        let word = |k: usize| (p as *const u8).add(2 * k).cast::<u16>().read_unaligned();
+        let n = (0..span / 2).take_while(|&k| word(k) != 0).count();
+        let s: String = (0..n).map(|k| char::from_u32(word(k) as u32).unwrap_or('\u{fffd}')).collect();
         return format!(" -> L\"{s}\"");
     }
     if b[..4].iter().all(|&c| printable(c)) {
@@ -103,7 +104,9 @@ unsafe fn describe_ptr(p: u64) -> String {
         let s = String::from_utf8_lossy(std::slice::from_raw_parts(p as *const u8, n));
         return format!(" -> \"{s}\"");
     }
-    let w: Vec<String> = (0..4).map(|k| format!("{:#x}", *(p as *const u64).add(k))).collect();
+    let w: Vec<String> = (0..4)
+        .map(|k| format!("{:#x}", (p as *const u8).add(8 * k).cast::<u64>().read_unaligned()))
+        .collect();
     format!(" -> [{}]", w.join(", "))
 }
 
@@ -111,7 +114,9 @@ unsafe fn describe_ptr(p: u64) -> String {
 /// address at +0x88 and the caller's stack arguments from +0x90 + 0x20 (the shadow space).
 unsafe extern "system" fn trace(caller: usize, name: *const String, frame: *const u64) -> usize {
     if crate::modules::image_base_for_addr(caller).is_some() {
-        let at = |off: usize| *frame.add(off / 8);
+        // the thunk's frame follows the caller's, which is only 8-byte aligned on Win64 for
+        // the rsp the prologue sees here; read the words unaligned rather than faulting.
+        let at = |off: usize| (frame as *const u8).add(off).cast::<u64>().read_unaligned();
         let (a1, a2, a3) = (at(0x78), at(0x70), at(0x68));
         let (a4, a5) = (at(0x90 + 0x20), at(0x90 + 0x28));
         crate::xlog_info!(
@@ -142,7 +147,7 @@ const CALL_STACK_ARGS: usize = 8;
 /// arguments at +0x20.., the entry rcx, rdx, r8, r9 at +0x60.., rax at +0x80, the caller's
 /// return address at +0xA8.
 unsafe extern "system" fn trace_ret(caller: usize, name: *const String, frame: *const u64) {
-    let at = |off: usize| *frame.add(off / 8);
+    let at = |off: usize| (frame as *const u8).add(off).cast::<u64>().read_unaligned();
     let (a1, a2, a3, a4) = (at(0x60), at(0x68), at(0x70), at(0x78));
     let (a5, a6, ret) = (at(0x20), at(0x28), at(0x80));
     crate::xlog_info!(

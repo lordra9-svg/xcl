@@ -1155,8 +1155,12 @@ unsafe extern "system" fn get_state(this: *mut c_void, state_out: *mut XAudio2Vo
     let orig: GetStateFn = std::mem::transmute(orig);
     orig(this, state_out, flags);
     if !state_out.is_null() && (*state_out).current_buffer_context.is_null() && (*state_out).buffers_queued > 0 {
-        if let Some(ctx) = PLAIN_CONTEXT.lock().unwrap().as_ref().and_then(|m| m.get(&(this as usize)).copied()) {
-            (*state_out).current_buffer_context = ctx as *mut c_void;
+        // Only for voices XCL does not decode: a decoded voice maps its own tokens below.
+        let decoded = DECODED_VOICES.lock().unwrap().as_ref().is_some_and(|m| m.contains_key(&(this as usize)));
+        if !decoded {
+            if let Some(ctx) = PLAIN_CONTEXT.lock().unwrap().as_ref().and_then(|m| m.get(&(this as usize)).copied()) {
+                (*state_out).current_buffer_context = ctx as *mut c_void;
+            }
         }
     }
     if !state_out.is_null() && DECODED_LIVE_COUNT.load(Ordering::Acquire) != 0 {

@@ -6810,7 +6810,12 @@ mod tests {
                 execute_with_waits_on(q_comp.as_raw(), &segs_c, |chunk| {
                     type ExecFn = unsafe extern "system" fn(*mut c_void, u32, *const *mut c_void);
                     let exec: ExecFn = std::mem::transmute(*(*(q_comp.as_raw() as *const *const usize)).add(PC_QUEUE_EXECUTE_COMMAND_LISTS));
+                    // vkd3d-proton validates the submitted list's vtable (Wine/Proton)
+                    let saved: Vec<_> = chunk.iter().map(|&l| real::unadopt(l as usize)).collect();
                     exec(q_comp.as_raw(), chunk.len() as u32, chunk.as_ptr());
+                    for s in saved {
+                        real::restore_adopted(s);
+                    }
                     signal_write64_fences(q_comp.as_raw(), chunk);
                     if chunk.contains(&pc_c0) {
                         cell_a.store(frame, Ordering::Release);
@@ -6823,7 +6828,12 @@ mod tests {
                 execute_with_waits_on(q_dir.as_raw(), &one_d, |chunk| {
                     type ExecFn = unsafe extern "system" fn(*mut c_void, u32, *const *mut c_void);
                     let exec: ExecFn = std::mem::transmute(*(*(q_dir.as_raw() as *const *const usize)).add(PC_QUEUE_EXECUTE_COMMAND_LISTS));
+                    // vkd3d-proton validates the submitted list's vtable (Wine/Proton)
+                    let saved: Vec<_> = chunk.iter().map(|&l| real::unadopt(l as usize)).collect();
                     exec(q_dir.as_raw(), chunk.len() as u32, chunk.as_ptr());
+                    for s in saved {
+                        real::restore_adopted(s);
+                    }
                     signal_write64_fences(q_dir.as_raw(), chunk);
                     cell_b.store(frame, Ordering::Release);
                 });

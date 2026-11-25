@@ -172,6 +172,18 @@ fn approximate_float_unary_ops_are_within_tolerance() {
 
 #[test]
 fn integer_ops_match_cpu() {
+    // Wine/vkd3d-proton: after the other dxil tests this one faults in vkCreateComputePipelines
+    // (0xc0000005). With XCL_TEST_ISOLATE_DXIL set, run it in a fresh child process.
+    if std::env::var_os("XCL_TEST_ISOLATE_DXIL").is_some() && std::env::var_os("XCL_TEST_ISOLATE_DXIL_CHILD").is_none() {
+        let exe = std::env::current_exe().expect("test executable");
+        let status = std::process::Command::new(exe)
+            .args(["--exact", "gpu::dxil::ops_tests::integer_ops_match_cpu", "--test-threads=1"])
+            .env("XCL_TEST_ISOLATE_DXIL_CHILD", "1")
+            .status()
+            .expect("spawn the isolated dxil test");
+        assert!(status.success(), "isolated dxil test failed: {status}");
+        return;
+    }
     let mut k = kernel();
     let a = k.input(0);
     let b = k.input(1);
@@ -295,6 +307,18 @@ fn float_binary_tertiary_and_half_conversions_match_cpu() {
 
 #[test]
 fn uaddc_and_usubb_match_cpu() {
+    // Wine/vkd3d-proton: after the other dxil tests this one faults in vkCreateComputePipelines
+    // (0xc0000005). With XCL_TEST_ISOLATE_DXIL set, run it in a fresh child process.
+    if std::env::var_os("XCL_TEST_ISOLATE_DXIL").is_some() && std::env::var_os("XCL_TEST_ISOLATE_DXIL_CHILD2").is_none() {
+        let exe = std::env::current_exe().expect("test executable");
+        let status = std::process::Command::new(exe)
+            .args(["--exact", "gpu::dxil::ops_tests::uaddc_and_usubb_match_cpu", "--test-threads=1"])
+            .env("XCL_TEST_ISOLATE_DXIL_CHILD2", "1")
+            .status()
+            .expect("spawn the isolated dxil test");
+        assert!(status.success(), "isolated dxil test failed: {status}");
+        return;
+    }
     // HLSL never emits UAddc/USubb, but DXC 1.9's validator accepts them in cs_6_6.
     let mut k = kernel();
     let a = k.input(0);

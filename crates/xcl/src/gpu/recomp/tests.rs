@@ -1038,6 +1038,18 @@ fn f64_rounding_and_conversions(wave64: bool) {
 /// range get real roots within an ulp of the CPU's, a negative x gives NaN and −0 gives −0.
 #[test]
 fn gpu_f64_roots() {
+    // Wine/vkd3d-proton: this test faults on stale device state when it follows other GPU
+    // tests. With XCL_TEST_ISOLATE_RECOMP set, run it in a fresh child process.
+    if std::env::var_os("XCL_TEST_ISOLATE_RECOMP").is_some() && std::env::var_os("XCL_TEST_ISOLATE_RECOMP_CHILD1").is_none() {
+        let exe = std::env::current_exe().expect("test executable");
+        let status = std::process::Command::new(exe)
+            .args(["--exact", "gpu::recomp::tests::gpu_f64_roots", "--test-threads=1"])
+            .env("XCL_TEST_ISOLATE_RECOMP_CHILD1", "1")
+            .status()
+            .expect("spawn the isolated GPU test");
+        assert!(status.success(), "isolated GPU test failed: {status}");
+        return;
+    }
     for wave64 in gpu_waves() {
         f64_roots(wave64);
     }
@@ -3804,6 +3816,18 @@ fn gpu_image_sample_offset() {
 /// (4 GiB-aligned arena opened as a D3D12 heap) and its stores land there, no copies.
 #[test]
 fn gpu_unified_memory_arena() {
+    // Wine/vkd3d-proton: after other GPU tests this one faults on stale device/UMA state
+    // (0x2a80). With XCL_TEST_ISOLATE_UMA set, run it in a fresh child process.
+    if std::env::var_os("XCL_TEST_ISOLATE_UMA").is_some() && std::env::var_os("XCL_TEST_ISOLATE_UMA_CHILD1").is_none() {
+        let exe = std::env::current_exe().expect("test executable");
+        let status = std::process::Command::new(exe)
+            .args(["--exact", "gpu::recomp::tests::gpu_unified_memory_arena", "--test-threads=1"])
+            .env("XCL_TEST_ISOLATE_UMA_CHILD1", "1")
+            .status()
+            .expect("spawn the isolated GPU test");
+        assert!(status.success(), "isolated GPU test failed: {status}");
+        return;
+    }
     if !gpu_ready() {
         return;
     }
@@ -4193,6 +4217,18 @@ fn gpu_window_at_32bit_carry_edge_cases() {
 /// (vkd3d-proton under a Wine without `userfaultfd` write watches, #175).
 #[test]
 fn gpu_uma_import_check_at_init() {
+    // Wine/vkd3d-proton: after other GPU tests this one faults on stale device/UMA state
+    // (0x2a80). With XCL_TEST_ISOLATE_UMA set, run it in a fresh child process.
+    if std::env::var_os("XCL_TEST_ISOLATE_UMA").is_some() && std::env::var_os("XCL_TEST_ISOLATE_UMA_CHILD2").is_none() {
+        let exe = std::env::current_exe().expect("test executable");
+        let status = std::process::Command::new(exe)
+            .args(["--exact", "gpu::recomp::tests::gpu_uma_import_check_at_init", "--test-threads=1"])
+            .env("XCL_TEST_ISOLATE_UMA_CHILD2", "1")
+            .status()
+            .expect("spawn the isolated GPU test");
+        assert!(status.success(), "isolated GPU test failed: {status}");
+        return;
+    }
     if !gpu_ready() {
         return;
     }
@@ -4212,6 +4248,19 @@ fn gpu_uma_import_check_at_init() {
 /// Window 0 sparse VRAM between submits.
 #[test]
 fn gpu_sparse_vram_descriptors_buffers_and_xmem() {
+    // Wine/vkd3d-proton: this test leaves backend state (device/UMA sparse windows) that the
+    // next GPU test faults on (0x2a80). With XCL_TEST_ISOLATE_SPARSE set, run the body in a
+    // fresh child process; Windows CI does not set it and runs in-process as before.
+    if std::env::var_os("XCL_TEST_ISOLATE_SPARSE").is_some() && std::env::var_os("XCL_TEST_ISOLATE_CHILD").is_none() {
+        let exe = std::env::current_exe().expect("test executable");
+        let status = std::process::Command::new(exe)
+            .args(["--exact", "gpu::recomp::tests::gpu_sparse_vram_descriptors_buffers_and_xmem", "--test-threads=1"])
+            .env("XCL_TEST_ISOLATE_CHILD", "1")
+            .status()
+            .expect("spawn the isolated sparse test");
+        assert!(status.success(), "isolated sparse test failed: {status}");
+        return;
+    }
     use windows::core::Interface;
     use windows::Win32::Graphics::Direct3D12::*;
 
@@ -7549,6 +7598,18 @@ fn ldexp_ref(x: f64, n: i32) -> Option<f64> {
 /// one rounding. sqrt must be within 1 ulp and rsq within 2.
 #[test]
 fn gpu_f64_math_random() {
+    // Wine/vkd3d-proton: this test faults on stale device state when it follows other GPU
+    // tests. With XCL_TEST_ISOLATE_RECOMP set, run it in a fresh child process.
+    if std::env::var_os("XCL_TEST_ISOLATE_RECOMP").is_some() && std::env::var_os("XCL_TEST_ISOLATE_RECOMP_CHILD2").is_none() {
+        let exe = std::env::current_exe().expect("test executable");
+        let status = std::process::Command::new(exe)
+            .args(["--exact", "gpu::recomp::tests::gpu_f64_math_random", "--test-threads=1"])
+            .env("XCL_TEST_ISOLATE_RECOMP_CHILD2", "1")
+            .status()
+            .expect("spawn the isolated GPU test");
+        assert!(status.success(), "isolated GPU test failed: {status}");
+        return;
+    }
     for wave64 in gpu_waves() {
         f64_math_random(wave64);
     }
@@ -8879,6 +8940,18 @@ fn oversized_structured_code_falls_back_to_pc_blocks() {
 /// the block dispatcher (`structured: false`).
 #[test]
 fn jumps_to_outer_loop_heads_are_structured() {
+    // Wine/vkd3d-proton: this test faults on stale device state when it follows other GPU
+    // tests. With XCL_TEST_ISOLATE_RECOMP set, run it in a fresh child process.
+    if std::env::var_os("XCL_TEST_ISOLATE_RECOMP").is_some() && std::env::var_os("XCL_TEST_ISOLATE_RECOMP_CHILD3").is_none() {
+        let exe = std::env::current_exe().expect("test executable");
+        let status = std::process::Command::new(exe)
+            .args(["--exact", "gpu::recomp::tests::jumps_to_outer_loop_heads_are_structured", "--test-threads=1"])
+            .env("XCL_TEST_ISOLATE_RECOMP_CHILD3", "1")
+            .status()
+            .expect("spawn the isolated GPU test");
+        assert!(status.success(), "isolated GPU test failed: {status}");
+        return;
+    }
     let i = |n: &str, e: &str, f: &[(&str, u64)]| encode(n, e, f, None).unwrap_or_else(|x| panic!("{n}: {x}"));
     let mut x = 0x9E37_79B9_7F4A_7C15u64;
     let mut rnd = move |n: u64| {

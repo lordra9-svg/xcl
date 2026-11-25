@@ -675,6 +675,9 @@ static ORIGINALS: Mutex<Vec<(usize, usize, usize)>> = Mutex::new(Vec::new());
 static XMA: Mutex<Option<HashMap<usize, XmaInfo>>> = Mutex::new(None);
 /// Live decoded voices (Opus & XMA1/XMA2: voice pointer → handle).
 static DECODED_VOICES: Mutex<Option<HashMap<usize, DecodedVoiceHandle>>> = Mutex::new(None);
+/// voice → context of its newest submitted buffer, for voices XCL does not decode (Wine has no
+/// MSOpusDecoder, so an Opus format becomes a PC voice); Wine's GetState leaves it null.
+static PLAIN_CONTEXT: Mutex<Option<HashMap<usize, usize>>> = Mutex::new(None);
 /// Count of live decoded voices (fast path for plain PCM voices).
 static DECODED_LIVE_COUNT: AtomicUsize = AtomicUsize::new(0);
 
@@ -1101,6 +1104,9 @@ unsafe fn submit_decoded_buffer(
 
 unsafe extern "system" fn submit_source_buffer(this: *mut c_void, buf: *const XAudio2Buffer, wma: *const c_void) -> HRESULT {
     let Some(orig) = original(this, VOICE_SUBMIT_SOURCE_BUFFER) else { return E_FAIL };
+    if !buf.is_null() {
+        PLAIN_CONTEXT.lock().unwrap().get_or_insert_with(HashMap::new).insert(this as usize, (*buf).context as usize);
+    }
     let orig: SubmitSourceBufferFn = std::mem::transmute(orig);
     if !buf.is_null() && DECODED_LIVE_COUNT.load(Ordering::Acquire) != 0 {
         let state = DECODED_VOICES
@@ -1148,6 +1154,11 @@ unsafe extern "system" fn get_state(this: *mut c_void, state_out: *mut XAudio2Vo
     let Some(orig) = original(this, VOICE_GET_STATE) else { return };
     let orig: GetStateFn = std::mem::transmute(orig);
     orig(this, state_out, flags);
+    if !state_out.is_null() && (*state_out).current_buffer_context.is_null() && (*state_out).buffers_queued > 0 {
+        if let Some(ctx) = PLAIN_CONTEXT.lock().unwrap().as_ref().and_then(|m| m.get(&(this as usize)).copied()) {
+            (*state_out).current_buffer_context = ctx as *mut c_void;
+        }
+    }
     if !state_out.is_null() && DECODED_LIVE_COUNT.load(Ordering::Acquire) != 0 {
         let voice_state = DECODED_VOICES
             .lock()
